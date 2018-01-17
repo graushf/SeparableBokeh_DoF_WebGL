@@ -1,0 +1,947 @@
+<html>
+
+
+<head>
+	<title>3D Scene Test Bokeh DoF </title>
+	<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+
+	<!--<script type="text/javascript" src="glMatrix-0.9.5-modified.min.js"></script>-->
+    <link rel="stylesheet" href="css/styles.css" type="text/css">
+    <script type="text/javascript" src="js/StatsInformation.js"></script>
+	<script type="text/javascript" src="js/webgl-utils.js"></script>
+	<script type="text/javascript" src="js/gl-matrix-test.js"></script>
+    <script type="text/javascript" src="js/basicSceneObjects.js"></script>
+    <script type="text/javascript" src="js/main.js"></script>
+    <script type="text/javascript" src="js/texture.js"></script>
+    <script type="text/javascript" src="js/Camera.js"></script>
+    <script type="text/javascript" src="js/ShaderUtils.js"></script>
+    <script type="text/javascript" src="js/Geometries.js"></script>
+    <script type="text/javascript" src="js/Framebuffers.js"></script>
+    <script type="text/javascript" src="js/MRTFramebuffers.js"></script>
+    <script type="text/javascript" src="js/Eventhandler.js"></script>
+    <script type="text/javascript" src="js/Renderer.js"></script>
+
+
+    <script id="lighting-phong-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec3 vFragPos;
+        varying vec3 vNormal;
+        varying vec2 vTextureCoord;
+
+        uniform vec3 staticColor;
+
+        uniform vec3 lightPos;
+        uniform vec3 viewPos;
+        uniform vec3 lightColor;
+        //uniform vec3 objectColor;
+
+        uniform int uUseTexture;
+
+        uniform int uDisableLighting;
+
+        struct Material {
+            sampler2D diffuse;
+            float shininess;
+            int hasSpecular;
+        };
+
+        struct DirLight {
+            vec3 direction;
+
+            vec3 ambient;
+            vec3 diffuse;
+            vec3 specular;
+        };
+
+        struct PointLight {
+            vec3 position;
+
+            float constant;
+            float linear;
+            float quadratic;
+
+            vec3 ambient;
+            vec3 diffuse;
+            vec3 specular;
+        };
+        #define NR_POINT_LIGHTS 1
+        uniform PointLight pointLights[NR_POINT_LIGHTS];
+
+        uniform DirLight dirLight;
+        uniform Material material;
+
+        vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir);
+        vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir);
+
+        void main()  
+        {   
+            vec3 result = staticColor;
+            if(uDisableLighting == 0) 
+            {
+                vec3 norm = normalize(vNormal);
+                vec3 lightDir = normalize(lightPos - vFragPos);
+                vec3 viewDir = normalize(viewPos - vFragPos);
+            
+                result = vec3(0.0, 0.0, 0.0);
+                result += CalcDirLight(dirLight, norm, viewDir);
+
+                for (int i = 0; i < NR_POINT_LIGHTS; i++) {
+                    result += CalcPointLight(pointLights[i], norm, vFragPos, viewDir);
+                }
+            } 
+            
+            gl_FragColor = vec4(result, 1.0);
+        }
+
+        vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir) {
+            vec3 lightDir = normalize(-light.direction);
+            // diffuse shading
+            float diff = max(dot(normal, lightDir), 0.0);
+            // specular shading 
+            vec3 reflectDir = reflect(-lightDir, normal);
+            float spec = 0.0;
+            if (material.hasSpecular == 1) {
+                spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);    
+            }
+            
+            // combine results
+            vec3 ambient;
+            vec3 diffuse;
+
+            if (uUseTexture == 1) {
+                ambient = light.ambient * vec3(texture2D(material.diffuse, vTextureCoord));
+                diffuse = light.diffuse * diff * vec3(texture2D(material.diffuse, vTextureCoord));    
+            } else {
+                ambient = light.ambient * light.diffuse;
+                diffuse = light.diffuse * diff * light.diffuse;    
+            }
+           
+            vec3 specular = light.specular * spec * light.diffuse;
+
+            return (ambient + diffuse + specular);
+            //return specular;
+        }
+
+        vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir) {
+            vec3 lightDir = normalize(light.position - fragPos);
+            // diffuse shading
+            float diff = max(dot(normal, lightDir), 0.0);
+            // specular shading
+            vec3 reflectDir = reflect(-lightDir, normal);
+            float spec = 0.0;
+            if (material.hasSpecular == 1) {
+                spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
+            }
+            // attenuation
+            float distance = length(light.position - fragPos);
+            float attenuation = 1.0 / (light.constant + light.linear * distance + light.quadratic * (distance * distance));
+
+            // combine results
+            vec3 ambient = light.ambient * lightColor;
+            vec3 diffuse = lightColor* diff * lightColor;
+            vec3 specular = light.specular * spec * light.diffuse;
+            ambient *= attenuation;
+            diffuse *= attenuation;
+            specular *= attenuation;
+            return (diffuse + specular);
+            //return vec3(0.0, 1.0, 0.0);
+            //return ambient;
+            //return diffuse;
+            //return specular;
+        }
+    </script>
+
+    <script id="lighting-phong-vs" type="x-shader/x-vertex">
+       attribute vec3 aVertexPosition;
+       attribute vec3 aVertexNormal;
+       attribute vec2 aTextureCoord;
+
+       varying vec3 vNormal;
+       varying vec3 vFragPos;
+       varying vec2 vTextureCoord;
+
+       uniform mat4 uMMatrix;
+       uniform mat4 uVMatrix;
+       uniform mat4 uPMatrix;
+       //uniform mat3 uNMatrix;
+
+       void main(void)  {
+            gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+            //gl_Position = vec4(aVertexPosition, 1.0);
+            vFragPos = vec3(uMMatrix * vec4(aVertexPosition, 1.0));
+            vTextureCoord = aTextureCoord;
+            vNormal = aVertexNormal;
+       }
+
+    </script>
+
+	<script id="fragment-focal-plane-fs" type="x-shader/x-fragment">
+		precision mediump float;
+
+		void main(void) {
+			gl_FragColor = vec4(1.0, 1.0, 0.0, 0.5);
+		}
+	</script>
+
+	<script id="fragment-focal-plane-vs" type="x-shader/x-vertex">
+		attribute vec3 aVertexPosition;
+
+		uniform mat4 uMMatrix;
+		uniform mat4 uVMatrix;
+		uniform mat4 uPMatrix;
+
+		void main(void) {
+			gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+		}
+	</script>
+
+	<script id="fragment-depth-fs" type="x-shader/x-fragment">
+		precision mediump float;
+
+		uniform float uNear;
+		uniform float uFar;
+
+		float LinearizeDepth(float depth) 
+		{
+			float z = depth * 2.0 - 1.0; // back to NDC
+			return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+		}
+
+		void main(void) {
+			float depth = LinearizeDepth(gl_FragCoord.z) / uFar; // divide by far for demostration
+			gl_FragColor = vec4(vec3(depth), 1.0);
+			//gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+		}
+	</script>
+
+	<script id="fragment-depth-vs" type="x-shader/x-vertex">
+		attribute vec3 aVertexPosition;
+
+		uniform mat4 uMMatrix;
+		uniform mat4 uVMatrix;
+		uniform mat4 uPMatrix;
+
+		void main(void) {
+			gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+		}
+	</script>
+
+	<script id="focal-depth-fs" type="x-shader/x-fragment">
+		precision mediump float;
+
+		uniform float uFar;
+
+		uniform vec3 uCameraFront;
+		uniform vec3 uCameraPos;
+
+		uniform float uFDistance;
+
+		varying vec3 vFragPos;
+
+		void main(void) {
+			//gl_FragColor = vec4(vec3(1.0, 0.0, 0.0), 1.0); return;
+			//gl_FragColor = vec4(vec3(uFDistance/uFar), 1.0); return;
+			vec3 colorOut = vec3(0.0, 1.0, 0.0);
+			vec3 cameraFront = normalize(uCameraFront);
+
+			vec3 v_proj = (dot(vFragPos, cameraFront)/dot(cameraFront, cameraFront))*cameraFront;
+			//float d_proj = length(cameraFront-v_proj);
+			vec3 v_fragPosCam = vFragPos - uCameraPos;
+			float d_proj = dot(cameraFront, v_fragPosCam);
+
+
+			// Calculation 1
+			float aux = d_proj/uFDistance;
+
+			if (aux < 1.0) {
+				float color = 1.0 - aux;
+				colorOut = vec3(color);
+			} else {
+
+				aux = (d_proj - uFDistance)/(uFar - uFDistance);
+				colorOut = vec3(aux);
+				//colorOut = vec3(1.0, 0.0, 0.0);
+			}
+
+			gl_FragColor = vec4(vec3(d_proj)/uFDistance, 1.0);
+			gl_FragColor = vec4(colorOut, 1.0);
+		}
+	</script>
+
+	<script id="focal-depth-vs" type="x-shader/x-vertex">
+	attribute vec3 aVertexPosition;
+
+	uniform mat4 uMMatrix;
+	uniform mat4 uVMatrix;
+	uniform mat4 uPMatrix;
+
+	varying vec3 vFragPos;
+
+	void main(void) {
+		gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+		vFragPos = vec3(uMMatrix * vec4(aVertexPosition, 1.0));
+	}
+	</script>
+
+    <script id="depth-objectspace-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform float uFar;
+        uniform float uNear;
+
+        void main(void) {
+            float z = uNear * uFar / (uFar - gl_FragCoord.z*(uFar - uNear));
+            float scaleFactor = 100.0;
+            z /= scaleFactor;
+            gl_FragColor = vec4(vec3(z), 1.0);
+            //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="depth-objectspace-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+
+        uniform mat4 uMMatrix;
+        uniform mat4 uVMatrix;
+        uniform mat4 uPMatrix;
+
+        void main(void) {
+            gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+        }
+    </script>
+
+    <script id="debug-shader-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec3 vTransformedNormal;
+        varying vec4 vPosition;
+
+        void main(void) {
+            gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="debug-shader-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec3 aVertexNormal;
+
+        uniform mat4 uMMatrix;
+        uniform mat4 uVMatrix;
+        uniform mat4 uPMatrix;
+        uniform mat3 uNMatrix;
+
+        varying vec3 vTransformedNormal;
+        varying vec4 vPosition;
+
+        void main(void) {
+            vPosition = uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+            gl_Position = uPMatrix * vPosition;
+            vTransformedNormal = uNMatrix * aVertexNormal;
+        }
+    </script>
+
+	
+
+	<script id="shader-vs-postprocess" type="x-shader/x-vertex">
+		attribute vec3 aVertexPosition;
+		attribute vec2 aTextureCoord;
+
+		varying vec2 vTextureCoord;
+
+		void main(void) {
+			vTextureCoord = aTextureCoord;
+			gl_Position = vec4(aVertexPosition, 1.0);
+		}
+
+	</script>
+
+    <script id="rend-to-texture-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec2 vTextureCoord;
+
+        uniform sampler2D uSampler;
+
+        uniform int uDrawBorder;
+
+        uniform float drawCoC;
+
+        uniform float normColor;
+
+        uniform float multiplyColor;
+
+        void main(void) {
+            if (uDrawBorder == 0) {
+                vec3 vSample = texture2D(uSampler, vTextureCoord).rgb;
+                gl_FragColor = vec4(vSample, 1.0);
+
+                if (drawCoC != 0.0) {
+
+                    float col = texture2D(uSampler, vTextureCoord).w;
+                    if (col < 0.0) {
+                        gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
+                    } 
+                    else
+                    {
+                        gl_FragColor = vec4(0.0, 0.0, col, 1.0);
+                    }
+
+                    gl_FragColor *= multiplyColor;
+                    return;
+                }
+
+                if (normColor == 1.0) {
+                    vSample /= 2.0;
+                    gl_FragColor = vec4(vSample, 1.0); return;
+                }
+
+            } else {
+                gl_FragColor = vec4(0.46, 0.71, 0.0, 1.0);
+            }
+            
+        }
+
+    </script>
+
+    <script id="rend-to-texture-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec2 aTextureCoord;
+
+        varying vec2 vTextureCoord;
+
+        uniform mat4 model;
+
+        void main(void) {
+            vTextureCoord = aTextureCoord;
+            gl_Position = model * vec4(aVertexPosition, 1.0);
+        }
+    </script>
+
+    <script id="BlurPass1" type="x-shader/x-fragment">
+        #extension GL_EXT_draw_buffers : require
+
+        precision mediump float;
+
+        uniform sampler2D uSampler;
+        uniform float bokehStrength;
+        uniform vec2 uResolution;
+        varying vec2 vTextureCoord;
+
+        uniform float uTime;
+
+        uniform float farBlurdistancelimit;
+
+        uniform int iterationSample;
+
+        const int NUM_SAMPLES = 8;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
+        float GatherAndApplyDebug(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
+        void debugIterationSamplePick();
+
+        void main() {
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            vec4 baseColour = texture2D(uSampler, vTextureCoord);
+
+            vec4 outputColor = vec4(0.0, 0.0, 0.0, baseColour.w);
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, baseColour.w);
+
+            float sampleCount0 = 0.0;
+            float sampleCount1 = 0.0;
+
+
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+
+            for (int i = 0; i < NUM_SAMPLES; i++)
+            {   
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+            
+                // Vertical blur.
+                vec2 step0 = vec2(0.0, -1.0) * stepDistance;
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
+
+                // Diagonal blur
+                vec2 step1 = vec2(xStep, 0.5) * stepDistance;
+                sampleCount1 += GatherAndApply(vTextureCoord + step1, baseColour.w, outputColor2, stepDistance, outputColor2);
+                
+            }
+            outputColor.xyz = sampleCount0 > 0.0 ? (outputColor.xyz / sampleCount0) : baseColour.xyz;
+            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : baseColour.xyz;
+
+            outputColor2.xyz += outputColor.xyz;
+
+            if (abs(outputColor.w) > abs(outputColor2.w))
+            {
+                outputColor2.w = outputColor.w;
+            }
+
+            gl_FragData[0] = outputColor;
+            gl_FragData[1] = outputColor2;
+        }
+
+
+        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
+            
+            outColor = currCol;
+            vec4 col = texture2D(uSampler, uv);
+
+            bool blurNear = col.w < 0.0;
+            float absCoC = abs(col.w) * 1.0 / 1.0;
+            
+
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * farBlurdistancelimit)))
+            {
+                if (blurNear) {
+                    if (outColor.w < 0.0)
+                    {
+                        outColor.w = min(outColor.w, col.w);
+                    }
+                    else 
+                    {
+                        if (-col.w > outColor.w)
+                        {
+                            outColor.w = col.w;
+                        }
+                    }
+                }
+
+                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+                outColor.xyz += sampleFraction * col.xyz;
+
+                return sampleFraction;
+            }
+            return 0.0;
+        }
+    </script>
+
+    <script id="BlurPass2" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D BlurPass1_0;
+        uniform sampler2D BlurPass1_1;
+
+        uniform float bokehStrength;
+
+        uniform vec2 uResolution;
+        varying vec2 vTextureCoord;
+
+        uniform float uTime;
+
+        uniform float drawFirstBlur;
+        uniform float drawFirstBlurCoC;
+        uniform float drawSecondBlur;
+        uniform float drawSecondBlurCoC;
+
+        uniform float multiplyColor;
+
+        uniform int iterationSample;
+
+        uniform float farBlurdistancelimit;
+
+        const int NUM_SAMPLES = 8;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        float GatherAndApply(sampler2D texture, vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
+        void debugIterationSamplePick();
+
+        void main(void) {
+            vec4 finalCol;
+
+            vec4 baseColour = texture2D(BlurPass1_1, vTextureCoord);
+
+            vec4 outputColor0 = vec4(0.0, 0.0, 0.0, baseColour.w);
+            vec4 outputColor1 = vec4(0.0, 0.0, 0.0, baseColour.w);
+
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            float sampleCount0 = 0.0;
+            float sampleCount1 = 0.0;
+
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+            vec2 step0 = vec2(xStep, 0.5);
+            vec2 step1 = vec2(-xStep, 0.5);
+
+            for (int i = 0; i < NUM_SAMPLES; i++)
+            {
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+
+                sampleCount0 += GatherAndApply(BlurPass1_0, vTextureCoord + step0 * stepDistance, baseColour.w, outputColor0, stepDistance, outputColor0);
+                
+                sampleCount1 += GatherAndApply(BlurPass1_1, vTextureCoord + step1 * stepDistance, baseColour.w, outputColor1, stepDistance, outputColor1);
+
+            }
+
+            outputColor0.xyz = sampleCount0 > 0.0 ? outputColor0.xyz / sampleCount0 : baseColour.xyz * 0.5;
+            outputColor1.xyz = sampleCount1 > 0.0 ? outputColor1.xyz / sampleCount1 : baseColour.xyz;
+
+            if (drawFirstBlur != 0.0) {
+                gl_FragColor = vec4(outputColor0.xyz, 1.0); return;
+            }
+            if (drawFirstBlurCoC != 0.0) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); 
+                float col = texture2D(BlurPass1_0, vTextureCoord).w;
+                if (col < 0.0) {
+                    gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
+                }
+                else {
+                    gl_FragColor = vec4(0.0, 0.0, col, 1.0);
+                }
+                gl_FragColor *= multiplyColor;
+                return;
+            }
+            if (drawSecondBlur != 0.0) {
+                gl_FragColor = vec4(outputColor1.xyz/2.0, 1.0); return;
+            }
+            if (drawSecondBlurCoC != 0.0) {
+                gl_FragColor = vec4(0.0, 0.0, 0.0, 1.0); 
+                float col = texture2D(BlurPass1_1, vTextureCoord).w; 
+                if (col < 0.0) {
+                    gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
+                }
+                else {
+                    gl_FragColor = vec4(0.0, 0.0, col, 1.0);
+                }
+                gl_FragColor *= multiplyColor;
+                return;
+            }
+
+
+            finalCol.xyz = (outputColor0.xyz + outputColor1.xyz) / 3.0;
+
+            finalCol.w = max(abs(outputColor0.w), abs(outputColor1.w));
+
+            gl_FragColor = finalCol;
+        }
+
+        float GatherAndApply(sampler2D texture, vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
+
+            outColor = currCol;
+            vec4 col = texture2D(texture, uv);
+
+            bool blurNear = col.w < 0.0;
+            float absCoC = abs(col.w) * 1.0 / 1.0;
+            
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            {
+                if (blurNear) {
+                    if (outColor.w < 0.0)
+                    {
+                        outColor.w = min(outColor.w, col.w);
+                    }
+                    else {
+                        if (-col.w > outColor.w)
+                        {
+                            outColor.w = col.w;
+                        }
+                    }
+                }
+
+                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+                outColor.xyz += sampleFraction * col.xyz;
+                
+                return sampleFraction;
+            }
+
+            return 0.0;
+        }
+    </script>
+
+    <script id="DepthPass-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform float uFar;
+        uniform float uNear;
+
+        void main(void) {
+            float z = gl_FragCoord.z;
+            //float z = uNear * uFar / (uFar - gl_FragCoord.z*(uFar - uNear));
+            gl_FragColor = vec4(vec3(z), 1.0);
+        }
+    </script>
+
+    <script id="DepthPass-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        uniform mat4 uMMatrix;
+        uniform mat4 uVMatrix;
+        uniform mat4 uPMatrix;
+
+        void main(void) {
+            gl_Position = uPMatrix * uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+        }
+    </script>
+
+    <script id="CoCSizePass-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D colorChannel;
+        uniform sampler2D depthChannel;
+
+        uniform float CoCScale;
+        uniform float CoCBias;
+
+        varying vec2 vTextureCoord;
+
+        void main(void) {
+            vec4 outCol;
+
+            outCol.xyz = texture2D(colorChannel, vTextureCoord).xyz;
+
+            outCol.w = texture2D(depthChannel, vTextureCoord).x;
+            float aux = texture2D(depthChannel, vTextureCoord).x;
+
+            // Get CoCScale and CoCBias from aperture, focal length, focal plane and 
+            // cam near/far, as per equations
+            outCol.w = (CoCScale * outCol.w) + CoCBias;
+            
+            gl_FragColor = outCol;
+        }
+    </script>
+
+    <script id="DebugCoC-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec2 vTextureCoord;
+
+        uniform sampler2D inputChannel;
+
+        uniform int uDrawBorder;
+
+        void main(void) {
+
+            gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+            if (uDrawBorder == 0) {
+                float col = texture2D(inputChannel, vTextureCoord).w;
+                if (col < 0.0) {
+                    gl_FragColor = vec4(abs(col), 0.0, 0.0, 1.0);
+                } 
+                else
+                {
+                    gl_FragColor = vec4(0.0, 0.0, col, 1.0);
+                }
+        
+                gl_FragColor.xyz *= 50.0;
+                
+            } else {
+                gl_FragColor = vec4(0.46, 0.71, 0.0, 1.0);
+            }
+        }
+
+    </script>
+
+
+    <script id="CoCSizePass-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec2 aTextureCoord;
+
+        varying vec2 vTextureCoord;
+
+        void main(void) {
+            vTextureCoord = aTextureCoord;
+            gl_Position = vec4(aVertexPosition, 1.0);
+        }        
+    </script>
+
+    <script id="ApplyDoFPass-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        varying vec2 vTextureCoord;
+
+        uniform sampler2D uChannelOriginalScene;
+        uniform sampler2D uChannelBluredScene;
+
+        void debugBlurTextureCoC(vec4 blurChannel);
+        void debugSceneTexture(vec4 sceneChannel);
+        void debugBlurTexture(vec4 blurChannel);
+
+        void main(void) {
+            // Sample the texture
+            vec4 colChannel0 = texture2D(uChannelOriginalScene, vTextureCoord);
+            vec4 colChannel1 = texture2D(uChannelBluredScene, vTextureCoord);
+
+            
+
+            colChannel1.w = clamp(8.0 * abs(colChannel1.w) - 0.001, 0.0, 1.0);
+            vec3 col = mix(colChannel0.xyz, colChannel1.xyz, colChannel1.w);
+            gl_FragColor = vec4(col, 1.0);
+            return;
+        }
+
+        void debugBlurTextureCoC(vec4 blurChannel) {
+            if (blurChannel.w < 0.0) {
+                gl_FragColor = vec4(vec3(abs(blurChannel.w), 0.0, 0.0), 1.0);
+            } else {
+                gl_FragColor = vec4(vec3(0.0, 0.0, abs(blurChannel.w)), 1.0);
+            }
+        }
+
+        void debugBlurTexture(vec4 blurChannel) {
+            gl_FragColor = vec4(blurChannel.xyz, 1.0);
+        }
+
+        void debugSceneTexture(vec4 sceneChannel) {
+            gl_FragColor = vec4(sceneChannel.xyz, 1.0);
+        }
+
+    </script>
+
+    <script id="DebugPass-fs" type="x-shader/x-fragment">
+        precision mediump float;
+
+        uniform sampler2D uSampler;
+        uniform float bokehStrength;
+        uniform vec2 uResolution;
+        varying vec2 vTextureCoord;
+
+        uniform float uTime;
+
+        //#define USE_RANDOM 
+
+        const int NUM_SAMPLES = 32;
+
+        float OneOverScreenWidth;
+        float OneOverScreenHeight;
+
+        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor);
+        float hash12n(vec2 p);
+
+        void main() {
+            OneOverScreenWidth = 1.0/uResolution.x;
+            OneOverScreenHeight = 1.0/uResolution.y;
+
+            vec4 baseColour = texture2D(uSampler, vTextureCoord);
+
+            vec4 outputColor = vec4(0.0, 0.0, 0.0, baseColour.w);
+            vec4 outputColor2 = vec4(0.0, 0.0, 0.0, baseColour.w);
+
+            float sampleCount0 = 0.0;
+            float sampleCount1 = 0.0;
+
+            // Diagonal blur step, corrector for aspect ratio
+            float xStep = 0.866 * (OneOverScreenWidth/OneOverScreenHeight);
+
+            for (int i = 0; i < NUM_SAMPLES; i++)
+            {
+                float stepDistance = (float(i) + 0.5) * OneOverScreenHeight * bokehStrength;
+
+                // Vertical blur.
+                vec2 step0 = vec2(0.0, -1.0) * stepDistance;
+                #if defined(USE_RANDOM) 
+                    //step0 += (hash12n(step0 + fract(uTime)/1000.0+0.001)) * 1.0;
+                    step0 += (hash12n(step0/100000000.0)) * 1.0;
+                #endif
+                sampleCount0 += GatherAndApply(vTextureCoord + step0, baseColour.w, outputColor, stepDistance, outputColor);
+
+                vec4 aux = texture2D(uSampler, vTextureCoord);
+                bool blurNear = aux.w < 0.0;
+                
+                if (blurNear) {
+                    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                } else {
+                    gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
+                }
+                return;
+
+                // Diagonal blur
+                vec2 step1 = vec2(xStep, 0.5) * stepDistance;
+                sampleCount1 += GatherAndApply(vTextureCoord + step1, baseColour.w, outputColor2, stepDistance, outputColor2);
+            }
+
+            //Normalize if any color was added. 
+            outputColor.xyz = sampleCount0 > 0.0 ? (outputColor.xyz / sampleCount0) : baseColour.xyz;
+            outputColor2.xyz = sampleCount1 > 0.0 ? (outputColor2.xyz / sampleCount1) : baseColour.xyz;
+
+            // The second render target contains both of these added together. Don't divide 
+            // by two here, as it'll be combined again and divided by three in the next pass.
+            outputColor2.xyz += outputColor.xyz;
+
+            // For the combined term, set the CoC to the blurriest of the two inputs
+            if (abs(outputColor.w) > abs(outputColor2.w))
+            {
+                outputColor2.w = outputColor.w;
+            }
+
+        }
+
+        float GatherAndApply(vec2 uv, float baseCoC, vec4 currCol, float stepDistance, inout vec4 outColor) {
+            outColor = currCol;
+            vec4 col = texture2D(uSampler, uv);
+
+            // CoC < 0 means the pixel is in front of the focal plane.
+            bool blurNear = col.w < 0.0;
+            float absCoC = abs(col.w);
+            //float absCoC = abs(bokehStrength);
+
+            //Check if the CoC of the sampled pixel is big enough to scatter here, and 
+            //the sampled pixel is in front of the focal plane or
+            //this pixel is behind the focal plane and the sampled pixel isn't too far behind it.
+            if ((absCoC > stepDistance) && (blurNear || (baseCoC > 0.0 && absCoC < baseCoC * 2.0)))
+            {
+                // Sort out the CoC of the blurred image, by taking the biggest CoC to maintain the 
+                // hexagon shape in the second pass.
+                // Near-blurred pixels should continue to blur over far pixels. Far pixels don't blur
+                // over near pixels so that case can be ignored.
+                if (blurNear) {
+                    if (outColor.w < 0.0)
+                    {
+                        // This pixel is already near-blurred, so see if the sampled CoC is any bigger.
+                        outColor.w = min(outColor.w, col.w);
+                    } 
+                    else 
+                    {
+                        // This pixel is behind the focal plane, so only continue with the near-blur if 
+                        // that is stronger. Going to get artifacts either way on depth edges with different
+                        // coloured pixels.
+                        if (-col.w > outColor.w)
+                        {
+                            outColor.w = col.w;
+                        }
+                    }
+                }
+
+                // Now accumulate the colour. Allow partial sampling at the pixel boundary for smootheness. 
+                float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+                outColor.xyz += sampleFraction * col.xyz;
+
+                return sampleFraction;
+            }
+
+            // float sampleFraction = clamp((absCoC - stepDistance) / OneOverScreenHeight, 0.0, 1.0);
+            // outColor.xyz += sampleFraction * col.xyz;
+            // return sampleFraction;
+
+            // No colour added.
+            return 0.0;
+        }
+    </script>
+
+	</head>
+
+	<body onload="webGLStart();">
+        <div class="container">
+            <canvas id="3D_scene-canvas" style="border: none;" width="2100" height="1200"></canvas> 
+		    <!-- <canvas id="3D_scene-canvas" style="border: none;" width="3200" height="1680"></canvas> -->
+            <div id="overlay">
+                <div>FPS: <span id="time"></span></div>
+                <div>Aperture (U/J): <span id="aperture"></span></div>
+                <div>Focal Plane (I/K): <span id="focalplane"></span></div>
+                <div>Focal Length (O/L): <span id="focallength"></span></div>
+                <div>CoCScale: <span id="cocscale"></span></div>
+                <div>CoCBias: <span id="cocbias"></span></div>
+                <div>CoCScale + CoCBias: <span id="cocdiff"></span></div>
+                <!-- <div>Bokeh Strength : <span id="bokehstrength"></span></div>
+                <div>Far Blur Distance Limit: <span id="farblurdistancelimit"></span></div> -->
+                <!-- <div>i iteration blur: <span id="indexiterationblur"></span></div>
+                <div>Enable ind.iter. blur: <span id="enableinditer"></span></div> -->
+            </div>
+        </div>
+	</body>
+</html>
