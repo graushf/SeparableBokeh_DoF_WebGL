@@ -10,10 +10,20 @@ function drawBokehEffects() {
 
       drawScene(shaderProgramDepthPass);
 
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferDepthAlternate);
+        gl.viewport(0, 0, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
+        drawAlternateDepthPass();
+
+
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferCoCSize);
       gl.viewport(0, 0, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
 
       drawCoCSizePass();
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferAlternateCoCSize);
+      gl.viewport(0, 0, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
+      drawAlternateCoCPass();
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, MRTfbData.f);
 
@@ -104,16 +114,25 @@ function drawBokehEffects() {
       drawSecondPassBokeh(0.0, 0.0, 0.0, 1.0, 50.0);
 
 
+      // Alternate CoC Algorithm
+      gl.viewport(4 * (gl.viewportWidth/8.0), 5*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+      //drawAlternateCoCPass(); // Draw alternate CoC size
+      drawScreenTexture(framebufferDepthAlternateTexture, 0.0, 0.0, 0.0, 0.0);
+      gl.viewport(5 * (gl.viewportWidth/8.0), 5*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+      drawDebugAlternateDepthPass();
+
+      gl.viewport(6 * (gl.viewportWidth/8.0), 5*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+      //drawScreenTexture(framebufferDepthAlternateTexture, 0.0, 0.0, 0.0, 0.0);
+      //drawAlternateCoCPass();
+      drawScreenTexture(framebufferAlternateCoCSizeTexture, 0.0, 0.0, 0.0, 0.0);
+
+      gl.viewport(5 * (gl.viewportWidth/8.0), 6*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
+      drawScreenTexture(textureFramebufferCoCSize, 0.0, 0.0, 0.0, 0.0);
+
+
       //gl.viewport(4 * (gl.viewportWidth/8.0), 5*(gl.viewportHeight/7.0), gl.viewportWidth/8.0, gl.viewportHeight/7.0);
       //drawFirstPassBokeh(1.0);
-
-
 }
-
-
-
-
-
 
 function drawFirstPassBokeh(drawInputCoC) {
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -249,7 +268,8 @@ function drawCoCSizePass() {
       gl.enableVertexAttribArray(shaderProgramCoCSizePass.textureCoordAttribute);
 
       shaderProgramCoCSizePass.samplerUniform0 = gl.getUniformLocation(shaderProgramCoCSizePass, "colorChannel");
-      shaderProgramCoCSizePass.samplerUniform1 = gl.getUniformLocation(shaderProgramCoCSizePass, "depthChannel");
+      shaderProgramCoCSizePass.samplerUniform1 = gl.getUniformLocation(shaderProgramCoCSizePass, "depthChannel");    
+      shaderProgramCoCSizePass.samplerUniform2 = gl.getUniformLocation(shaderProgramCoCSizePass, "cocChannel");
 
       shaderProgramCoCSizePass.CoCScaleUniform = gl.getUniformLocation(shaderProgramCoCSizePass, "CoCScale"); 
       shaderProgramCoCSizePass.CoCBiasUniform = gl.getUniformLocation(shaderProgramCoCSizePass, "CoCBias");
@@ -267,8 +287,12 @@ function drawCoCSizePass() {
       gl.uniform1i(shaderProgramCoCSizePass.samplerUniform0, 0);
 
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, textureFramebufferDepth);
+      gl.bindTexture(gl.TEXTURE_2D, framebufferDepthAlternateTexture);
       gl.uniform1i(shaderProgramCoCSizePass.samplerUniform1, 1);
+
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, framebufferAlternateCoCSizeTexture);
+      gl.uniform1i(shaderProgramCoCSizePass.samplerUniform2, 2);
 
       var zNear = myCamera.GetNearValue();
       var zFar = myCamera.GetFarValue();
@@ -474,6 +498,13 @@ function drawTeapot(programShading, translatePos) {
           gl.bindBuffer(gl.ARRAY_BUFFER, teapotVertexTextureCoordBuffer);
           gl.vertexAttribPointer(programShading.textureCoordAttribute, teapotVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
       }
+      if (programShading == shaderProgramAlternateDepthPass) {
+            gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+            gl.disableVertexAttribArray(shaderProgramLightingPhong.vertexNormalAttribute);
+            gl.disableVertexAttribArray(shaderProgramLightingPhong.textureCoordAttribute);
+            gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+            gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+        }
 
       mat4.identity(mMatrix);
       mat4.identity(vMatrix);
@@ -533,6 +564,13 @@ function drawPlane(programShading) {
           gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
           gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
       }
+      if (programShading == shaderProgramAlternateDepthPass) {
+        gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+        gl.disableVertexAttribArray(shaderProgramLightingPhong.vertexNormalAttribute);
+        gl.disableVertexAttribArray(shaderProgramLightingPhong.textureCoordAttribute);
+        gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+        gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+        }
 
       mat4.identity(mMatrix);
       var aux = mat4.create();
@@ -596,6 +634,14 @@ function drawPlaneHorizon(programShading) {
           gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexTextureCoordBuffer);
           gl.vertexAttribPointer(programShading.textureCoordAttribute, planeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
       }
+      if (programShading == shaderProgramAlternateDepthPass) {
+            gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+            gl.disableVertexAttribArray(shaderProgramLightingPhong.vertexNormalAttribute);
+            gl.disableVertexAttribArray(shaderProgramLightingPhong.textureCoordAttribute);
+            gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+            gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+      }
+
 
       mat4.identity(mMatrix);
       var aux = mat4.create();
@@ -659,6 +705,13 @@ function drawSphere(programShading, translatePos, scaleVal, color) {
           gl.bindBuffer(gl.ARRAY_BUFFER, sphereVertexTextureCoordBuffer);
           gl.vertexAttribPointer(programShading.textureCoordAttribute, sphereVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
       }
+      if (programShading == shaderProgramAlternateDepthPass) {
+            gl.enableVertexAttribArray(programShading.vertexPositionAttribute);
+            gl.disableVertexAttribArray(shaderProgramLightingPhong.vertexNormalAttribute);
+            gl.disableVertexAttribArray(shaderProgramLightingPhong.textureCoordAttribute);
+            gl.uniform1f(programShading.nearUniform, myCamera.GetNearValue());
+            gl.uniform1f(programShading.farUniform, myCamera.GetFarValue());
+        }
 
       mat4.identity(mMatrix);
       var aux = mat4.create();
@@ -777,3 +830,99 @@ function drawScreenTexture(textureToDraw, enableBorder, drawCoC, normColor, mult
 function degToRad(degrees) {
    return degrees * Math.PI / 180;
 }
+
+// Alternate CoC Blur method
+
+function drawAlternateDepthPass() {
+    drawScene(shaderProgramAlternateDepthPass);
+}
+
+function drawDebugAlternateDepthPass() {
+    gl.useProgram(shaderProgramAlternateDepthDebugPass);
+
+    shaderProgramAlternateDepthDebugPass.vertexPositionAttribute = gl.getAttribLocation(shaderProgramAlternateDepthDebugPass, "aVertexPosition");
+    gl.enableVertexAttribArray(shaderProgramAlternateDepthDebugPass.vertexPositionAttribute);
+
+    shaderProgramAlternateDepthDebugPass.textureCoordAttribute = gl.getAttribLocation(shaderProgramAlternateDepthDebugPass, "aTextureCoord");
+    gl.enableVertexAttribArray(shaderProgramAlternateDepthDebugPass.textureCoordAttribute);
+
+    shaderProgramAlternateDepthDebugPass.samplerUniform = gl.getUniformLocation(shaderProgramAlternateDepthDebugPass, "Sample0");
+
+    gl.disable(gl.DEPTH_TEST);
+
+    var _focusdistance = focusdistance;
+    var _Far = myCamera.GetFarValue();
+    _focusdistance = _focusdistance / myCamera.GetFarValue();
+
+    gl.uniform1f(gl.getUniformLocation(shaderProgramAlternateDepthDebugPass, "focusdistance"), _focusdistance);
+    gl.uniform1f(gl.getUniformLocation(shaderProgramAlternateDepthDebugPass, "enableFocusDistanceDebug"), 0.0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+    gl.vertexAttribPointer(shaderProgramAlternateDepthDebugPass.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+    gl.vertexAttribPointer(shaderProgramAlternateDepthDebugPass.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, framebufferDepthAlternateTexture);
+    gl.uniform1i(shaderProgramAlternateDepthDebugPass.samplerUniform, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+    gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+    gl.enable(gl.DEPTH_TEST);
+}
+
+function drawAlternateCoCPass() {
+    gl.useProgram(shaderProgramCoCPass);
+
+    var FocalLength = focallength;
+    var FocusDistance = focusdistance;
+    var FStop = fstop;
+
+    var Near = myCamera.GetNearValue();
+    var Far = myCamera.GetFarValue();
+
+    // Set PPM (assume 35mm camera sensor)
+    var PPM = Math.sqrt((gl.viewportWidth/downsampleCoefficient * gl.viewportWidth/downsampleCoefficient) + (gl.viewportHeight/downsampleCoefficient * gl.viewportHeight/downsampleCoefficient)) / 35.0;
+
+    var ms = FocalLength / ((FocusDistance * 1000) - FocalLength);
+    var BlurCoefficient = (FocalLength * ms) / FStop;
+
+    shaderProgramCoCPass.vertexPositionAttribute = gl.getAttribLocation(shaderProgramCoCPass, "aVertexPosition");
+    gl.enableVertexAttribArray(shaderProgramCoCPass.vertexPositionAttribute);
+
+    shaderProgramCoCPass.textureCoordAttribute = gl.getAttribLocation(shaderProgramCoCPass, "aTextureCoord");
+    gl.enableVertexAttribArray(shaderProgramCoCPass.textureCoordAttribute);
+
+    shaderProgramCoCPass.samplerUniformDepth = gl.getUniformLocation(shaderProgramCoCPass, "Sample0");
+
+    gl.uniform1f(gl.getUniformLocation(shaderProgramCoCPass, "uBlurCoefficient"), BlurCoefficient);
+    gl.uniform1f(gl.getUniformLocation(shaderProgramCoCPass, "uFocusDistance"), FocusDistance);
+    gl.uniform1f(gl.getUniformLocation(shaderProgramCoCPass, "uNear"), Near);
+    gl.uniform1f(gl.getUniformLocation(shaderProgramCoCPass, "uFar"), Far);
+    gl.uniform1f(gl.getUniformLocation(shaderProgramCoCPass, "uPPM"), PPM);
+    gl.uniform1f(gl.getUniformLocation(shaderProgramCoCPass, "uUseAutoFocus"), 0.0);
+
+    gl.disable(gl.DEPTH_TEST);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingVertexPositionBuffer);
+    gl.vertexAttribPointer(shaderProgramCoCPass.vertexPositionAttribute, screenFillingVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, screenFillingTextureCoordBuffer);
+    gl.vertexAttribPointer(shaderProgramCoCPass.textureCoordAttribute, screenFillingTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
+
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, framebufferDepthAlternateTexture);
+    gl.uniform1i(shaderProgramCoCPass.samplerUniformDepth, 0);
+
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, screenFillingIndexBuffer);
+    gl.drawElements(gl.TRIANGLES, screenFillingIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+
+    gl.enable(gl.DEPTH_TEST);
+}
+
+
+
+
+

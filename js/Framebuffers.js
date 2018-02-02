@@ -33,7 +33,45 @@ function createFramebuffers() {
 
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureDepth, 0);
       gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferDepth);
-      
+
+
+
+
+
+      //framebufferDepthAlternate
+      framebufferDepthAlternate = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferDepthAlternate);
+
+      var textureDepthAlternate = createAndSetupTexture();
+      framebufferDepthAlternateTexture = textureDepthAlternate;
+
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient, 0, gl.RGBA, gl.FLOAT, null);
+
+      var renderbufferDepthAlternate = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, renderbufferDepthAlternate);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
+
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureDepthAlternate, 0);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferDepthAlternate);
+
+
+
+      framebufferAlternateCoCSize = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, framebufferAlternateCoCSize);
+
+      var textureAlternateCoC = createAndSetupTexture();
+      framebufferAlternateCoCSizeTexture= textureAlternateCoC;
+
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient, 0, gl.RGBA, gl.FLOAT, null);
+
+      var renderbufferAlternateCoC = gl.createRenderbuffer();
+      gl.bindRenderbuffer(gl.RENDERBUFFER, renderbufferAlternateCoC);
+      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, gl.viewportWidth/downsampleCoefficient, gl.viewportHeight/downsampleCoefficient);
+
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, textureAlternateCoC, 0);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, renderbufferAlternateCoC);
+
+
 
 
       framebufferCoCSize = gl.createFramebuffer();

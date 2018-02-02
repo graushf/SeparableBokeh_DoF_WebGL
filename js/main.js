@@ -62,6 +62,16 @@ var mvMatrixStack = [];
 var pMatrix = mat4.create();
 var vMatrix = mat4.create();
 
+// Alternate algorithm
+var framebufferDepthAlternate;
+var framebufferDepthAlternateTexture;
+var framebufferAlternateCoCSize;
+var framebufferAlternateCoCSizeTexture;
+
+var focusdistance = 160.0;
+var focallength = 350.0;
+var fstop = 1.4;
+
 function initGL(canvas) {
 	try {
 		gl = canvas.getContext("experimental-webgl");
@@ -168,7 +178,12 @@ function webGLStart() {
 
     initShadersDebugCoC();
 
-    initShadersDebugPasses();
+	initShadersDebugPasses();
+	
+	// CoC Alternate
+	initShadersAlternateDepthPass();
+	initShadersAlternateDepthDebugPass();
+	initShadersCoCPass();
 
 	gl.clearColor(0.0, 0.0, 0.0, 1.0);
 	gl.enable(gl.DEPTH_TEST);

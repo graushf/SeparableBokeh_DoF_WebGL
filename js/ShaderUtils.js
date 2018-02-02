@@ -12,6 +12,10 @@ var shaderProgramDebugCoC;
 var shaderProgramDebugPass1;
 var shaderProgramDebugPass1;
 
+var shaderProgramCoCPass;
+var shaderProgramAlternateDepthDebugPass;
+var shaderProgramAlternateDepthPass;
+
 function getShader(gl, id) {
 	var shaderScript = document.getElementById(id);
 	if (!shaderScript) {
@@ -254,6 +258,62 @@ function initShadersDebugPasses() {
     gl.linkProgram(shaderProgramDebugPass1);
 
     if (!gl.getProgramParameter(shaderProgramDebugPass1, gl.LINK_STATUS)) {
+        alert("Could not initialise shaders");
+    }
+}
+
+
+// Alternate Blurring Method
+
+// shaderProgramAlternateDepthPass
+function initShadersAlternateDepthPass() {
+    var fragmentShader = getShader(gl, "DepthPass-Alternate-fs");
+    var vertexShader = getShader(gl, "DepthPass-Alternate-vs");
+
+    shaderProgramAlternateDepthPass = gl.createProgram();
+    gl.attachShader(shaderProgramAlternateDepthPass, vertexShader);
+    gl.attachShader(shaderProgramAlternateDepthPass, fragmentShader);
+    gl.linkProgram(shaderProgramAlternateDepthPass);
+
+    if (!gl.getProgramParameter(shaderProgramAlternateDepthPass, gl.LINK_STATUS)) {
+        alert("Could not initialise shaders");
+    }
+
+    shaderProgramAlternateDepthPass.vertexPositionAttribute = gl.getAttribLocation(shaderProgramAlternateDepthPass, "aVertexPosition");
+    gl.enableVertexAttribArray(shaderProgramAlternateDepthPass.vertexPositionAttribute);
+
+    shaderProgramAlternateDepthPass.pMatrixUniform = gl.getUniformLocation(shaderProgramAlternateDepthPass, "uPMatrix");
+    shaderProgramAlternateDepthPass.modelMatrixUniform = gl.getUniformLocation(shaderProgramAlternateDepthPass, "uMMatrix");
+    shaderProgramAlternateDepthPass.viewMatrixUniform = gl.getUniformLocation(shaderProgramAlternateDepthPass, "uVMatrix");
+
+    shaderProgramAlternateDepthPass.nearUniform = gl.getUniformLocation(shaderProgramAlternateDepthPass, "uNear");
+    shaderProgramAlternateDepthPass.farUniform = gl.getUniformLocation(shaderProgramAlternateDepthPass, "uFar");
+}
+
+function initShadersCoCPass() {
+    var fragmentShader = getShader(gl, "CoCQuantityPass-fs");
+    var vertexShader = getShader(gl, "CoCQuantityPass-vs");
+
+    shaderProgramCoCPass = gl.createProgram();
+    gl.attachShader(shaderProgramCoCPass, vertexShader);
+    gl.attachShader(shaderProgramCoCPass, fragmentShader);
+    gl.linkProgram(shaderProgramCoCPass);
+
+    if (!gl.getProgramParameter(shaderProgramCoCPass, gl.LINK_STATUS)) {
+        alert("Could not inialise shaders");
+    }
+}
+
+function initShadersAlternateDepthDebugPass() {
+    var fragmentShader =  getShader(gl, "DebugAlternateDepthPass-fs");
+    var vertexShader = getShader(gl, "DebugAlternateDepthPass-vs");
+
+    shaderProgramAlternateDepthDebugPass = gl.createProgram();
+    gl.attachShader(shaderProgramAlternateDepthDebugPass, vertexShader);
+    gl.attachShader(shaderProgramAlternateDepthDebugPass, fragmentShader);
+    gl.linkProgram(shaderProgramAlternateDepthDebugPass);
+
+    if (!gl.getProgramParameter(shaderProgramAlternateDepthDebugPass, gl.LINK_STATUS)) {
         alert("Could not initialise shaders");
     }
 }

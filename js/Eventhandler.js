@@ -58,28 +58,42 @@ function handleKeys() {
     }
 
     if (currentlyPressedKeys[85]) {
-        Aperture += 0.01;
+		//Aperture += 0.01;
+		focallength += 0.5;
     }
     if (currentlyPressedKeys[74]) {
-        Aperture -= 0.01;
+		//Aperture -= 0.01;
+		if (focallength > 10.0) {
+			focallength -= 0.5;
+		}
     }
 
     if (currentlyPressedKeys[73]) {
-        if (_focalPlane < 0.99) {
-            _focalPlane += 0.0001;    
-        }
+        //if (_focalPlane < 0.99) {
+        //    _focalPlane += 0.0001;    
+		//}
+		if (focusdistance < 500.0) {
+			focusdistance += 0.5;
+		}
     }
     if (currentlyPressedKeys[75]) {
-        if (_focalPlane > 0.0) {
-            _focalPlane -= 0.0001;
-        }
+        // if (_focalPlane > 0.0) {
+        //     _focalPlane -= 0.0001;
+		// }
+		if (focusdistance > 0.5) {
+			focusdistance -= 0.5;
+		}
     }
 
     if (currentlyPressedKeys[79]) {
-        focalLength += 0.1;
+		//focalLength += 0.1;
+		fstop += 0.1;
     }
     if (currentlyPressedKeys[76]) {
-        focalLength -= 0.1;
+		//focalLength -= 0.1;
+		if (fstop > 1.4) {
+			fstop -= 0.1;
+		}
     }
 
     if (currentlyPressedKeys[89]) {

@@ -679,29 +679,227 @@
         }
     </script>
 
+    <script id="DepthPass-Alternate-fs" type="x-shader/x-fragment">
+        precision highp float;
+
+        uniform float uNear;
+        uniform float uFar;
+
+        varying vec4 vPosition;
+
+        // Pack a floating point value into an RGBA (32bpp)
+        // Note that video cards apply some sort of bias (error?) to pixels,
+        // so we must correct for that by substracting the next component's
+        // value from the previous component
+        vec4 pack(float depth) {
+            const vec4 bias = vec4(1.0 / 255.0,
+                                    1.0 / 255.0,
+                                    1.0 / 255.0,
+                                    0.0);
+
+            float r = depth;
+            float g = fract(r * 255.0);
+            float b = fract(g * 255.0);
+            float a = fract(b * 255.0);
+            vec4 colour = vec4(r, g, b, a);
+
+            return colour - (colour.yzww * bias);
+        }
+
+        void main(void) {
+            // Linear depth
+            //gl_FragColor = vPosition; return;
+            float linearDepth = (abs(vPosition.z) - uNear) / (uFar - uNear);
+
+            gl_FragColor = pack(linearDepth);
+            //gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="DepthPass-Alternate-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+
+        uniform mat4 uMMatrix;
+        uniform mat4 uVMatrix;
+        uniform mat4 uPMatrix;
+
+        varying vec4 vPosition;
+
+        void main(void) {
+            vPosition = uVMatrix * uMMatrix * vec4(aVertexPosition, 1.0);
+            gl_Position = uPMatrix * vPosition;
+        }
+    </script>
+
+    <script id="DebugAlternateDepthPass-fs" type="x-shader/x-fragment">
+        precision highp float;
+
+        uniform sampler2D Sample0;
+        uniform float focusdistance;
+        uniform float enableFocusDistanceDebug;
+        
+        varying vec2 vUv;
+
+        // Unpack an RGBA pixel to floating point value
+        float unpack(vec4 colour) 
+        {
+            const vec4 bitShifts = vec4(1.0, 
+                                        1.0 / 255.0,
+                                        1.0 / (255.0 * 255.0),
+                                        1.0 / (255.0 * 255.0 * 255.0));
+            return dot(colour, bitShifts);
+        }
+
+        // Fragment shader entry.
+        void main() {
+            float depth = unpack(texture2D(Sample0, vUv));
+            gl_FragColor = vec4(depth, depth, depth, 1.0);
+
+            if (enableFocusDistanceDebug != 0.0) {
+                float autoFocusDistance = unpack(texture2D(Sample0, vec2(0.5, 0.5)));
+                if (depth < autoFocusDistance) {
+                    gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                }
+            }
+        }
+    </script>
+
+    <script id="DebugAlternateDepthPass-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec2 aTextureCoord;
+
+        varying vec2 vUv;
+
+        void main(void) {
+            vUv = aTextureCoord;
+            gl_Position = vec4(aVertexPosition, 1.0);
+        }
+    </script>
+
+    <script id="CoCQuantityPass-fs" type="x-shader/x-fragment">
+        precision highp float;
+
+        uniform sampler2D Sample0; // Depth texture
+
+        uniform float uBlurCoefficient;          // Calculated from the blur equation, b = (f * ms / N)
+        uniform float uFocusDistance;            // The distance to the subject in the perfect focus (= Ds)
+        uniform float uNear;                     // Near clipping plane
+        uniform float uFar;                      // Far clipping plane
+        uniform float uPPM;                      // Pixels per millimetre
+        uniform float uUseAutoFocus;
+
+        varying vec2 vUv;
+
+        float autoFocusDistance;
+        
+        // unpack an RGBA pixel to floating point value.
+        float unpack(vec4 colour)
+        {
+            const vec4 bitShifts = vec4(1.0,
+                                        1.0 / 255.0,
+                                        1.0 / (255.0 * 255.0),
+                                        1.0 / (255.0 * 255.0 * 255.0));
+            return dot(colour, bitShifts);
+        }
+
+        // Calculate the blur diameter to apply on the image.
+        // b = (f * ms / N) * (xd / (Ds +- xd))
+        // Where:
+        // (Ds + xd) for background objects
+        // (Ds - xd) for foreground objects
+        float GetBlurDiameter(float d)
+        {   
+            float focusDistance = uFocusDistance;
+            if (uUseAutoFocus != 0.0) {
+                focusDistance = autoFocusDistance;
+                focusDistance = focusDistance * (uFar - uNear); // Convert from linear to metres
+                gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+            }
+
+            // Convert from linear to metres
+            float Dd = d * (uFar - uNear);
+
+
+            float xd = abs(Dd - focusDistance);
+            float xdd = (Dd < focusDistance) ? (focusDistance - xd) : (focusDistance + xd);
+            float b = uBlurCoefficient * (xd / xdd);
+
+            return b * uPPM;
+        }
+
+        void main()
+        {   
+            // Maximum blur radius to limit hardware requirements.
+            // Cannot #define this due to a driver issue with some setups
+            const float MAX_BLUR_RADIUS = 50.0;
+
+            //gl_FragColor = vec4(vec3(unpack(texture2D(Sample0, vUv))), 1.0); return;
+            float depth = unpack(texture2D(Sample0, vUv));
+
+            autoFocusDistance = unpack(texture2D(Sample0, vec2(0.5, 0.5)));
+        
+            float CoCSize = GetBlurDiameter(depth); //return;
+            CoCSize = min(floor(CoCSize), MAX_BLUR_RADIUS);
+
+            gl_FragColor = vec4(vec3(CoCSize), 1.0);
+        }
+    </script>
+
+    <script id="CoCQuantityPass-vs" type="x-shader/x-vertex">
+        attribute vec3 aVertexPosition;
+        attribute vec2 aTextureCoord;
+
+        varying vec2 vUv;
+
+        void main(void) {
+            vUv = aTextureCoord;
+            gl_Position = vec4(aVertexPosition, 1.0);
+        }
+    </script>
+
     <script id="CoCSizePass-fs" type="x-shader/x-fragment">
         precision mediump float;
 
         uniform sampler2D colorChannel;
         uniform sampler2D depthChannel;
+        uniform sampler2D cocChannel;
 
         uniform float CoCScale;
         uniform float CoCBias;
 
         varying vec2 vTextureCoord;
 
-        void main(void) {
-            vec4 outCol;
+        // Unpack an RGBA pixel to floating point value
+        float unpack(vec4 colour) 
+        {
+            const vec4 bitShifts = vec4(1.0, 
+                                        1.0 / 255.0,
+                                        1.0 / (255.0 * 255.0),
+                                        1.0 / (255.0 * 255.0 * 255.0));
+            return dot(colour, bitShifts);
+        }
 
+        void main(void) {
+            float depth = unpack(texture2D(depthChannel, vTextureCoord));
+            //gl_FragColor =  vec4(depth, depth, depth, 1.0); return;
+            //gl_FragColor = texture2D(cocChannel, vTextureCoord); return;
+
+
+            vec4 outCol;
             outCol.xyz = texture2D(colorChannel, vTextureCoord).xyz;
 
-            outCol.w = texture2D(depthChannel, vTextureCoord).x;
+            //outCol.w = texture2D(depthChannel, vTextureCoord).x;
+            outCol.w = depth;
             float aux = texture2D(depthChannel, vTextureCoord).x;
 
             // Get CoCScale and CoCBias from aperture, focal length, focal plane and 
             // cam near/far, as per equations
             outCol.w = (CoCScale * outCol.w) + CoCBias;
             
+
+            float CoCQuantity = texture2D(cocChannel, vTextureCoord).x;
+            //outCol.w = CoCQuantity;
+
             gl_FragColor = outCol;
         }
     </script>
@@ -931,12 +1129,12 @@
 		    <!-- <canvas id="3D_scene-canvas" style="border: none;" width="3200" height="1680"></canvas> -->
             <div id="overlay">
                 <div>FPS: <span id="time"></span></div>
-                <div>Aperture (U/J): <span id="aperture"></span></div>
-                <div>Focal Plane (I/K): <span id="focalplane"></span></div>
-                <div>Focal Length (O/L): <span id="focallength"></span></div>
-                <div>CoCScale: <span id="cocscale"></span></div>
+                <div>Focal Length (U/J): <span id="focallength"></span></div>
+                <div>Focus Distance (I/K): <span id="focaldistance"></span></div>
+                <div>F-Stop (O/L): <span id="fstop"></span></div>
+                <!-- <div>CoCScale: <span id="cocscale"></span></div>
                 <div>CoCBias: <span id="cocbias"></span></div>
-                <div>CoCScale + CoCBias: <span id="cocdiff"></span></div>
+                <div>CoCScale + CoCBias: <span id="cocdiff"></span></div> -->
                 <!-- <div>Bokeh Strength : <span id="bokehstrength"></span></div>
                 <div>Far Blur Distance Limit: <span id="farblurdistancelimit"></span></div> -->
                 <!-- <div>i iteration blur: <span id="indexiterationblur"></span></div>
